@@ -1,0 +1,13 @@
+rules:
+  - id: ramboll.javascript.no-dynamic-eval
+    languages:
+      - javascript
+      - typescript
+    severity: ERROR
+    message: Dynamic eval executes data as code and can enable code injection.
+    pattern: eval(...)
+    metadata:
+      category: security
+      confidence: HIGH
+      references:
+        - https://owasp.org/www-community/attacks/Code_Injection

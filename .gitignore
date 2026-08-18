@@ -1,25 +1,6 @@
-# Dependencies
-node_modules/
-
-# Frontend build output
-frontend/.output/
-frontend/.vinxi/
-frontend/.tanstack/
-frontend/.nitro/
-frontend/dist/
-frontend/dist-ssr/
-frontend/.wrangler/
-
-# Rust build output
-backend/target/
-
-# Environment files
+node_modules
 .env
-.env.*
-!.env.example
-
-# OS / editor
-.DS_Store
-.idea/
-.memdb
-.memtrace
+**/.terraform/
+**/*.tfstate
+**/*.tfstate.*
+**/.terraform.lock.hcl
