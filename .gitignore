@@ -21,3 +21,5 @@ backend/target/
 # OS / editor
 .DS_Store
 .idea/
+.memdb
+.memtrace

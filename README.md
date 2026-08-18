@@ -107,3 +107,4 @@ Point your IDP at the two containers and:
 | `BACKEND_URL` | frontend | `http://localhost:3001`        | Base URL of the Rust backend |
 | `PORT`        | both     | `3000` / `3001`               | Listen port                  |
 | `RUST_LOG`    | backend  | `backend=info,tower_http=info` | Log level                    |
+# idp-ramboll-athg-test
