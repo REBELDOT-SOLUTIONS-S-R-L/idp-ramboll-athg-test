@@ -1,0 +1,48 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: athg-test
+  title: test-athg
+  description: test-athg service, onboarded via the Azure golden path.
+  annotations:
+    github.com/project-slug: REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test
+    backstage.io/techdocs-ref: dir:.
+    ramboll.com/azure-app: athg-test
+    ramboll.com/azure-resource-group: rg-ramboll-athg-test
+    rambollpoc.io/onboarded-via: golden-path
+    ramboll.com/tech-radar: >-
+      [
+      {"id":"container-app","title":"Azure Container Apps","quadrant":"infrastructure","ring":"adopt","description":"Serverless runtime hosting this app."},
+      {"id":"acr","title":"Azure Container Registry","quadrant":"infrastructure","ring":"adopt","description":"Image registry, pulled passwordlessly via managed identity."},
+      {"id":"terraform","title":"OpenTofu / Terraform","quadrant":"infrastructure","ring":"adopt","description":"This app's Azure resources are provisioned as code."},
+      {"id":"mi-oidc","title":"Managed Identity + OIDC","quadrant":"infrastructure","ring":"adopt","description":"Passwordless auth for CI and runtime. No static credentials."},
+      {"id":"github-actions","title":"GitHub Actions","quadrant":"frameworks","ring":"adopt","description":"CI build, release, and infra apply."},
+      {"id":"semantic-release","title":"semantic-release","quadrant":"process","ring":"adopt","description":"Conventional commits drive versioning and deploy."}
+      
+      
+      
+      
+      ]
+  tags:
+    - azure
+  links:
+    - url: https://athg-test.politeisland-97adf46b.westeurope.azurecontainerapps.io
+      title: Live app
+      icon: web
+    - url: https://portal.azure.com/#@0c597fcd-9af1-4f46-b9e8-35c74bddd6be/resource/subscriptions/d72eb01b-53db-4765-b1db-34e3dfcf5f26/resourceGroups/rg-ramboll-athg-test/overview
+      title: Azure resource group
+  labels:
+    ramboll.com/cost-center: software-engineering
+spec:
+  type: service
+  lifecycle: experimental
+  owner: group:default/software-engineering
+  system: applications
+  dependsOn:
+    - resource:default/acr-rambollpoc
+
+
+
+
+
+

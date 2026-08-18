@@ -1,0 +1,297 @@
+name: Semgrep
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: semgrep-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    name: Scan source
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep:1.172.0@sha256:65dcd4408adda7c183a6b4550cb1e9b19f7f627a6fbb7e0559bd466bedc44d7b
+    permissions:
+      contents: read
+    outputs:
+      error_count: ${{ steps.normalize.outputs.error_count }}
+      scan_state: ${{ steps.normalize.outputs.scan_state }}
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+
+      - name: Check out pinned Semgrep Community rules
+        uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
+          repository: semgrep/semgrep-rules
+          ref: 40b8c63f75dc7c22c8a77482d73bfb864b146f7e
+          path: .semgrep-community-rules
+          persist-credentials: false
+
+      - name: Scan without uploading source or results
+        id: scan
+        shell: bash
+        run: |
+          set +e
+          semgrep scan \
+            --config .semgrep-community-rules/javascript \
+            --config .semgrep-community-rules/typescript \
+            --config .semgrep-community-rules/dockerfile \
+            --config .semgrep.yml \
+            --exclude .semgrep-community-rules \
+            --metrics=off \
+            --json \
+            --output semgrep-raw.json \
+            .
+          scanner_exit=$?
+          set -e
+
+          normalize_input=semgrep-raw.json
+          failure_reason=""
+          if [ ! -s semgrep-raw.json ]; then
+            failure_reason="Semgrep did not produce a report"
+          elif ! jq -e '(.results | type) == "array" and (.errors | type) == "array"' semgrep-raw.json >/dev/null 2>&1; then
+            failure_reason="Semgrep produced malformed JSON"
+          elif [ "$scanner_exit" -ne 0 ]; then
+            failure_reason="Semgrep exited with status $scanner_exit"
+          elif [ "$(jq '.errors | length' semgrep-raw.json)" -gt 0 ]; then
+            failure_reason="Semgrep reported scanner or parsing errors"
+          elif ! jq -e '
+            (.results | length) <= 5000 and
+            all(.results[];
+              ((.check_id // "") | type == "string" and length <= 256) and
+              ((.path // "") | type == "string" and length <= 1024) and
+              ((.extra.message // "") | type == "string" and length <= 4000)
+            )
+          ' semgrep-raw.json >/dev/null; then
+            failure_reason="Semgrep report exceeded the supported size limits"
+          fi
+
+          if [ -n "$failure_reason" ]; then
+            normalize_input=semgrep-normalize-input.json
+            jq -n --arg message "$failure_reason" \
+              '{results: [], errors: [{message: $message}]}' > "$normalize_input"
+            echo "scanner_state=failed" >> "$GITHUB_OUTPUT"
+          else
+            echo "scanner_state=completed" >> "$GITHUB_OUTPUT"
+          fi
+          echo "normalize_input=$normalize_input" >> "$GITHUB_OUTPUT"
+
+      - name: Normalize repository report
+        id: normalize
+        shell: bash
+        env:
+          REPOSITORY: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          SCANNER_STATE: ${{ steps.scan.outputs.scanner_state }}
+          NORMALIZE_INPUT: ${{ steps.scan.outputs.normalize_input }}
+        run: |
+          set -euo pipefail
+          scanner_version="$(semgrep --version | head -1)"
+          generated_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          jq \
+            --arg generatedAt "$generated_at" \
+            --arg commit "$COMMIT_SHA" \
+            --arg repository "$REPOSITORY" \
+            --arg scannerVersion "$scanner_version" \
+            --arg scanState "$SCANNER_STATE" \
+            '
+              def severity: (.extra.severity // "INFO" | ascii_upcase) as $s
+                | if ["ERROR", "WARNING", "INFO"] | index($s) then $s else "INFO" end;
+              def positive_line($value): if ($value | type) == "number" and $value > 0 then $value else 1 end;
+              def encode_path: split("/") | map(@uri) | join("/");
+              def identity($path; $start; $end; $occurrence):
+                (.extra.fingerprint // "") as $fingerprint |
+                (if ($fingerprint | type) == "string" and $fingerprint != "" and $fingerprint != "requires login"
+                 then $fingerprint
+                 else ((.check_id // "unknown") + ":" + $path + ":" + ($start | tostring) + ":" + ($end | tostring))
+                 end) + ":" + ($occurrence | tostring);
+              (.results // []) as $results |
+              ($scanState == "completed") as $completed |
+              {
+                schemaVersion: 1,
+                scanner: { name: "semgrep", version: $scannerVersion },
+                scan: (if $completed
+                  then { status: "completed" }
+                  else {
+                    status: "failed",
+                    message: (([.errors[]?.message | select(type == "string")][0] // "Semgrep scan failed")[0:500])
+                  }
+                  end),
+                generatedAt: $generatedAt,
+                commit: $commit,
+                repository: $repository,
+                counts: (if $completed then {
+                  ERROR: ([$results[] | select(severity == "ERROR")] | length),
+                  WARNING: ([$results[] | select(severity == "WARNING")] | length),
+                  INFO: ([$results[] | select(severity == "INFO")] | length)
+                } else { ERROR: 0, WARNING: 0, INFO: 0 } end),
+                findings: (if $completed then [
+                  $results | to_entries[] |
+                  .key as $occurrence |
+                  .value |
+                  (positive_line(.start.line)) as $startLine |
+                  (positive_line(.end.line)) as $reportedEndLine |
+                  (if $reportedEndLine < $startLine then $startLine else $reportedEndLine end) as $endLine |
+                  (.path // "") as $path |
+                  {
+                    id: identity($path; $startLine; $endLine; $occurrence),
+                    ruleId: (.check_id // "unknown"),
+                    severity: severity,
+                    message: (.extra.message // "Semgrep finding"),
+                    path: $path,
+                    startLine: $startLine,
+                    endLine: $endLine,
+                    url: ("https://github.com/" + $repository + "/blob/" + $commit + "/" + ($path | encode_path) + "#L" + ($startLine | tostring) + "-L" + ($endLine | tostring)),
+                    references: ((.extra.metadata.references // []) | map(select(type == "string" and startswith("https://") and length <= 2048)) | .[0:20])
+                  }
+                ] else [] end)
+              }
+            ' "$NORMALIZE_INPUT" > semgrep-latest.json
+          jq -e '
+            .schemaVersion == 1 and
+            .scanner.name == "semgrep" and
+            (.scan.status == "completed" or .scan.status == "failed") and
+            (.commit | test("^[0-9a-f]{40}$")) and
+            (.findings | type == "array")
+          ' semgrep-latest.json >/dev/null
+          error_count="$(jq -r '.counts.ERROR' semgrep-latest.json)"
+          scan_state="$(jq -r '.scan.status' semgrep-latest.json)"
+          echo "error_count=$error_count" >> "$GITHUB_OUTPUT"
+          echo "scan_state=$scan_state" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Semgrep Community Edition"
+            echo
+            echo "Scan state: **$scan_state**"
+            echo
+            echo "| Severity | Findings |"
+            echo "| --- | ---: |"
+            jq -r '.counts | to_entries[] | "| \(.key) | \(.value) |"' semgrep-latest.json
+            echo
+            echo "Commit: \`$COMMIT_SHA\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Retain raw and normalized evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: semgrep-${{ github.run_id }}
+          path: |
+            semgrep-raw.json
+            semgrep-latest.json
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Publish canonical report
+    if: >-
+      always() && needs.scan.result == 'success' &&
+      (github.event_name == 'schedule' || github.ref == 'refs/heads/main')
+    needs: scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: semgrep-${{ github.run_id }}
+          path: semgrep-evidence
+
+      - name: Commit canonical report
+        shell: bash
+        run: |
+          set -euo pipefail
+          scanned_commit="$(jq -r '.commit' semgrep-evidence/semgrep-latest.json)"
+
+          validate_origin() {
+            git fetch origin main
+            if ! git merge-base --is-ancestor "$scanned_commit" origin/main; then
+              echo "Scanned commit $scanned_commit is not an ancestor of origin/main; refusing stale publication." >&2
+              exit 1
+            fi
+            if ! git diff --quiet "$scanned_commit" origin/main -- . ':(exclude)security/semgrep-latest.json' ':(exclude)security/trivy-latest.json' ':(exclude)security/checkov-iac-latest.json' ':(exclude)security/sbom-latest.json' ':(exclude)CHANGELOG.md'; then
+              echo "origin/main contains non-report changes after $scanned_commit; a newer scan must publish instead." >&2
+              exit 1
+            fi
+          }
+
+          validate_origin
+          mkdir -p security
+          cp semgrep-evidence/semgrep-latest.json security/semgrep-latest.json
+          git add security/semgrep-latest.json
+          if git diff --cached --quiet; then
+            echo "Canonical report is already current." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(security): update semgrep report [skip ci]"
+          for attempt in 1 2 3; do
+            validate_origin
+            if git push origin HEAD:main; then exit 0; fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "Unable to publish the canonical Semgrep report after 3 attempts." >&2
+              exit 1
+            fi
+            git rebase origin/main
+          done
+
+  policy:
+    name: Enforce SAST policy
+    if: always()
+    needs: [scan, publish]
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Require a successful scan and no error-severity findings
+        shell: bash
+        env:
+          SCAN_RESULT: ${{ needs.scan.result }}
+          SCAN_STATE: ${{ needs.scan.outputs.scan_state }}
+          ERROR_COUNT: ${{ needs.scan.outputs.error_count }}
+          PUBLISH_RESULT: ${{ needs.publish.result }}
+          EVENT_NAME: ${{ github.event_name }}
+          GIT_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$GIT_REF" != "refs/heads/main" ]; then
+            echo "Manual Semgrep runs must be dispatched from main, not $GIT_REF." >&2
+            exit 1
+          fi
+          if [ "$SCAN_RESULT" != "success" ]; then
+            echo "Semgrep scan job did not complete successfully ($SCAN_RESULT)." >&2
+            exit 1
+          fi
+          if [ "$SCAN_STATE" != "completed" ]; then
+            echo "Semgrep scanner state is ${SCAN_STATE:-missing}; inspect the retained artifact." >&2
+            exit 1
+          fi
+          if ! [[ "$ERROR_COUNT" =~ ^[0-9]+$ ]]; then
+            echo "Semgrep produced an invalid ERROR count: ${ERROR_COUNT:-missing}." >&2
+            exit 1
+          fi
+          should_publish=false
+          if [ "$EVENT_NAME" = "schedule" ] || [ "$GIT_REF" = "refs/heads/main" ]; then
+            should_publish=true
+          fi
+          if [ "$should_publish" = true ] && [ "$PUBLISH_RESULT" != "success" ]; then
+            echo "Canonical report publication failed ($PUBLISH_RESULT)." >&2
+            exit 1
+          fi
+          if [ "$ERROR_COUNT" -gt 0 ]; then
+            echo "Semgrep found $ERROR_COUNT error-severity finding(s); inspect the retained artifact." >&2
+            exit 1
+          fi
+          echo "Semgrep policy passed."

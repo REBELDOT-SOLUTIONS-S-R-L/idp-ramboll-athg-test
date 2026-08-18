@@ -1,0 +1,200 @@
+name: Infra
+run-name: Infra ${{ github.event_name == 'workflow_dispatch' && inputs.action || 'apply' }} (${{ github.repository }})
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - iac/infra/**
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Terraform action to run
+        type: choice
+        default: plan
+        options:
+          - plan
+          - apply
+          - destroy
+      confirm:
+        description: To destroy, type the repository name exactly
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: infra-${{ github.repository }}
+  cancel-in-progress: false
+
+env:
+  ARM_USE_OIDC: 'true'
+  ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  TF_VAR_subscription_id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+jobs:
+  plan-apply:
+    if: github.event_name != 'workflow_dispatch' || github.event.inputs.action != 'destroy'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: iac/infra
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+
+      - uses: hashicorp/setup-terraform@8620a60d7c841f00a53b5dd39f0027c2d042082f
+        with:
+          terraform_version: 1.15.8
+
+      - uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Terraform init
+        env:
+          AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          set -euo pipefail
+          for name in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID; do
+            test -n "${!name}" || { echo "Required repository variable $name is missing."; exit 1; }
+          done
+          initialized=false
+          for attempt in $(seq 1 12); do
+            if terraform init; then
+              initialized=true
+              break
+            fi
+            echo "Terraform backend is not ready yet ($attempt/12); waiting for Azure RBAC propagation."
+            sleep 15
+          done
+          test "$initialized" = "true" || { echo "Terraform backend initialization failed after 3 minutes." >&2; exit 1; }
+
+      - name: Terraform plan
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'plan'
+        run: terraform plan -no-color
+
+      - name: Terraform apply
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
+        run: |
+          set -uo pipefail
+          applied=false
+          for attempt in $(seq 1 6); do
+            set +e
+            output=$(terraform apply -auto-approve -no-color 2>&1)
+            status=$?
+            set -e
+            echo "$output"
+            if [ "$status" -eq 0 ]; then
+              applied=true
+              break
+            fi
+
+            # A role assignment this apply depends on can still be propagating, so a create call
+            # occasionally races it: the resource is actually created server-side, but Terraform's
+            # client sees an error and never records it in state. The next attempt then hits a
+            # real "already exists" conflict that plain retrying can never resolve on its own.
+            # Adopt anything Terraform names this way into state before retrying.
+            mapfile -t ids < <(echo "$output" | grep -oP '(?<=a resource with the ID ")[^"]+(?=" already exists)')
+            mapfile -t addrs < <(echo "$output" | grep -E '^[[:space:]]*with .+,$' | sed -E 's/^[[:space:]]*with (.+),$/\1/')
+            if [ "${#ids[@]}" -gt 0 ] && [ "${#ids[@]}" -eq "${#addrs[@]}" ]; then
+              for i in "${!ids[@]}"; do
+                echo "Adopting ${addrs[$i]} into state (created out-of-band on a prior attempt)."
+                terraform import "${addrs[$i]}" "${ids[$i]}" || true
+              done
+            fi
+
+            echo "Terraform apply failed ($attempt/6); a role assignment from the landing zone may still be propagating. Retrying in 30s."
+            sleep 30
+          done
+          test "$applied" = "true" || { echo "Terraform apply failed after 6 attempts (3 minutes)." >&2; exit 1; }
+
+  destroy:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy'
+    runs-on: ubuntu-latest
+    environment: destroy
+    defaults:
+      run:
+        working-directory: iac/infra
+    steps:
+      - name: Confirm destroy
+        if: github.event.inputs.confirm != github.event.repository.name
+        run: |
+          echo "Confirmation '${{ github.event.inputs.confirm }}' does not match repository name '${{ github.event.repository.name }}'."
+          exit 1
+
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+
+      - name: Guard - backend key belongs to this app
+        run: |
+          repo="${{ github.event.repository.name }}"
+          app="${repo#idp-ramboll-}"
+          expected_container="tfstate-${app}"
+          expected_key="terraform.tfstate"
+          container=$(grep -E '^[[:space:]]*container_name[[:space:]]*=' backend.tf | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          key=$(grep -E '^[[:space:]]*key[[:space:]]*=' backend.tf | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          if [ "$container" != "$expected_container" ] || [ "$key" != "$expected_key" ]; then
+            echo "Refusing to destroy: backend '$container/$key' does not match '$expected_container/$expected_key'."
+            echo "The destroy job may only operate on this app's own Terraform state."
+            exit 1
+          fi
+          echo "Backend '$container/$key' matches repo '$repo'."
+
+      - uses: hashicorp/setup-terraform@8620a60d7c841f00a53b5dd39f0027c2d042082f
+        with:
+          terraform_version: 1.15.8
+
+      - uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Terraform init
+        env:
+          AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          set -euo pipefail
+          for name in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID; do
+            test -n "${!name}" || { echo "Required repository variable $name is missing."; exit 1; }
+          done
+          initialized=false
+          for attempt in $(seq 1 12); do
+            if terraform init; then
+              initialized=true
+              break
+            fi
+            echo "Terraform backend is not ready yet ($attempt/12); waiting for Azure RBAC propagation."
+            sleep 15
+          done
+          test "$initialized" = "true" || { echo "Terraform backend initialization failed after 3 minutes." >&2; exit 1; }
+
+      - name: Guard - no shared infra in state
+        run: |
+          state=$(terraform state list)
+          if [ -z "$state" ]; then
+            echo "State is already empty; destroy is an idempotent no-op."
+            exit 0
+          fi
+          shared=$(echo "$state" | grep -vE '^data\.' | grep -E 'azurerm_virtual_network\.|azurerm_subnet\.|azurerm_postgresql_flexible_server\.|azurerm_container_registry\.|azurerm_container_app_environment\.|azurerm_private_dns_zone\.' || true)
+          if [ -n "$shared" ]; then
+            echo "Refusing to destroy: state manages shared platform infrastructure:"
+            echo "$shared"
+            echo "Shared infra must only be referenced as data sources, never managed here."
+            exit 1
+          fi
+          echo "State scope OK - only app-owned resources present:"
+          echo "$state"
+
+      - name: Terraform destroy
+        run: terraform destroy -auto-approve

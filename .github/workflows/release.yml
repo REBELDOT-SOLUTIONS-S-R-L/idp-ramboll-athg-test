@@ -1,0 +1,359 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  # Shares the production lock with the manual rollback workflow.
+  group: production-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+
+      - name: Use Node.js
+        if: hashFiles('package.json') != ''
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: ${{ hashFiles('package-lock.json') != '' && 'npm' || '' }}
+
+      - name: Run repository test gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -x .platform/test.sh ]; then
+            .platform/test.sh
+          elif [ -f package.json ]; then
+            node -e "const p=require('./package.json'); if (!p.scripts?.test) { console.error('package.json must declare a test script'); process.exit(1); }"
+            test -f package-lock.json || { echo "Node services must commit package-lock.json for a deterministic test gate." >&2; exit 1; }
+            npm ci
+            npm test
+          else
+            echo "No supported test gate found. Add package.json with scripts.test or executable .platform/test.sh." >&2
+            exit 1
+          fi
+
+  release:
+    needs: test
+    uses: REBELDOT-SOLUTIONS-S-R-L/idp-github-actions/.github/workflows/release-docker-acr.yaml@e3d08ff65b14f6066851534582154e5567294bd7
+    with:
+      acr_name: ${{ vars.AZURE_ACR_NAME }}
+      image_name: ${{ github.event.repository.name }}
+      context: .
+      dockerfile: ./Dockerfile
+
+  security-scan:
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
+          ref: ${{ github.ref_name }}
+
+      - uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Registry token for Trivy
+        run: |
+          token=$(az acr login --name ${{ vars.AZURE_ACR_NAME }} --expose-token --query accessToken -o tsv)
+          if [ -z "$token" ]; then
+            echo "Could not obtain an ACR access token."
+            exit 1
+          fi
+          echo "::add-mask::$token"
+          echo "TRIVY_USERNAME=00000000-0000-0000-0000-000000000000" >> "$GITHUB_ENV"
+          echo "TRIVY_PASSWORD=$token" >> "$GITHUB_ENV"
+
+      - name: Scan image
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8
+        with:
+          image-ref: ${{ needs.release.outputs.image_ref }}
+          format: json
+          output: trivy-raw.json
+          severity: CRITICAL,HIGH,MEDIUM,LOW
+
+      - name: Summarize scan
+        run: |
+          mkdir -p security
+          jq --arg image "${{ needs.release.outputs.image_ref }}" \
+             --arg now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
+            ([
+              .Results[]? as $result
+              | $result.Vulnerabilities[]?
+              | . + {Target: ($result.Target // "")}
+            ] | unique_by(tojson)) as $v
+            | {
+                image: $image,
+                generatedAt: $now,
+                counts: {
+                  CRITICAL: ([$v[] | select(.Severity == "CRITICAL")] | length),
+                  HIGH:     ([$v[] | select(.Severity == "HIGH")]     | length),
+                  MEDIUM:   ([$v[] | select(.Severity == "MEDIUM")]   | length),
+                  LOW:      ([$v[] | select(.Severity == "LOW")]      | length)
+                },
+                findings: (
+                  $v
+                  | sort_by(
+                      ({"CRITICAL":0,"HIGH":1,"MEDIUM":2,"LOW":3}[.Severity] // 4),
+                      (if ((.FixedVersion // "") | length) > 0 then 0 else 1 end),
+                      (.VulnerabilityID // ""),
+                      (.PkgName // ""),
+                      (.Target // ""),
+                      (.InstalledVersion // "")
+                    )
+                  | map({
+                      id: .VulnerabilityID,
+                      pkg: .PkgName,
+                      severity: .Severity,
+                      installedVersion: (.InstalledVersion // ""),
+                      fixedVersion: (.FixedVersion // ""),
+                      title: (.Title // ""),
+                      target: (.Target // ""),
+                      description: (.Description // ""),
+                      status: (.Status // ""),
+                      publishedDate: (.PublishedDate // ""),
+                      lastModifiedDate: (.LastModifiedDate // ""),
+                      primaryUrl: (.PrimaryURL // ""),
+                      references: (.References // [])
+                    })
+                )
+              }
+          ' trivy-raw.json > security/trivy-latest.json
+
+      - name: Generate SBOM
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8
+        with:
+          image-ref: ${{ needs.release.outputs.image_ref }}
+          format: cyclonedx
+          output: security/sbom-latest.json
+
+      - name: Scan infrastructure code
+        uses: bridgecrewio/checkov-action@1246d92f57abae29d5db5f9aeeed2a9813e52d7d
+        with:
+          directory: iac
+          framework: terraform
+          output_format: json
+          output_file_path: checkov-raw
+          soft_fail: true
+
+      - name: Summarize infrastructure scan
+        run: |
+          mkdir -p security
+          jq --arg now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
+            {
+              generatedAt: $now,
+              counts: {
+                failed: ((.results.failed_checks // []) | length),
+                passed: ((.results.passed_checks // []) | length)
+              },
+              findings: (
+                (.results.failed_checks // [])
+                | sort_by(
+                    (.resource // ""),
+                    (.repo_file_path // .file_path // ""),
+                    (.file_line_range[0] // 0)
+                  )
+                | map({
+                    id: .check_id,
+                    title: (.check_name // ""),
+                    resource: (.resource // ""),
+                    target: ((.repo_file_path // .file_path // "") | ltrimstr("/")),
+                    startLine: (.file_line_range[0] // 0),
+                    endLine: (.file_line_range[1] // 0),
+                    guideline: (.guideline // "")
+                  })
+              )
+            }
+          ' checkov-raw/results_json.json > security/checkov-iac-latest.json
+
+      - name: Commit scan summary
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add security/trivy-latest.json security/checkov-iac-latest.json security/sbom-latest.json
+          if git diff --cached --quiet; then
+            echo "No change in scan summary."
+            exit 0
+          fi
+          git commit -m "chore(security): update trivy scan summary [skip ci]"
+          for attempt in 1 2 3; do
+            echo "Push attempt $attempt of 3."
+            git push origin HEAD:${{ github.ref_name }} && exit 0
+            git pull --rebase origin ${{ github.ref_name }}
+          done
+          exit 1
+
+  deploy:
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+      id-token: write
+      actions: read
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+
+      - name: Resolve app name
+        run: |
+          app=$(sed -E -n 's/^app_name[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' iac/infra/terraform.tfvars)
+          if [ -z "$app" ]; then
+            echo "Could not read app_name from iac/infra/terraform.tfvars"
+            exit 1
+          fi
+          echo "APP_NAME=$app" >> "$GITHUB_ENV"
+
+      - uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Register production deployment
+        id: deployment
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
+        with:
+          script: |
+            const { data } = await github.rest.repos.createDeployment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: context.sha,
+              environment: 'production',
+              auto_merge: false,
+              required_contexts: [],
+              payload: { version: '${{ needs.release.outputs.version }}' },
+            });
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id: data.id,
+              state: 'in_progress',
+            });
+            return data.id;
+
+      - name: Wait for container app to exist
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          name="$APP_NAME"
+          rg="rg-ramboll-$APP_NAME"
+          sha="${{ github.sha }}"
+          i=0
+          while [ $i -lt 20 ]; do
+            if az containerapp show --name "$name" --resource-group "$rg" >/dev/null 2>&1; then
+              echo "Container app $name is ready."
+              exit 0
+            fi
+
+            infra_run="$(gh api "repos/${{ github.repository }}/actions/workflows/infra.yml/runs?event=push&head_sha=$sha" --jq '.workflow_runs[0] // {}' 2>/dev/null || echo '{}')"
+            infra_status="$(echo "$infra_run" | jq -r '.status // "unknown"')"
+            infra_conclusion="$(echo "$infra_run" | jq -r '.conclusion // "pending"')"
+
+            if [ "$infra_status" = "completed" ] && [ "$infra_conclusion" != "success" ]; then
+              echo "::error::Infra workflow for commit $sha concluded '$infra_conclusion'; the container app will never appear. Failing now instead of polling for 10 minutes. Check the Infra run on this commit."
+              exit 1
+            fi
+
+            i=$((i + 1))
+            echo "Container app $name not found yet (attempt $i/20); Infra is $infra_status ($infra_conclusion). Waiting..."
+            sleep 30
+          done
+          echo "Container app $name never appeared after 10 minutes, and the Infra workflow never reported failure. Check its run manually."
+          exit 1
+
+      - name: Update container app image
+        run: |
+          set -euo pipefail
+          resource_group="rg-ramboll-$APP_NAME"
+          previous=$(az containerapp show --name "$APP_NAME" --resource-group "$resource_group" --query 'properties.template.containers[0].image' -o tsv)
+          previous_revision=$(az containerapp show --name "$APP_NAME" --resource-group "$resource_group" --query properties.latestRevisionName -o tsv)
+          az containerapp update \
+            --name "$APP_NAME" \
+            --resource-group "$resource_group" \
+            --image ${{ vars.AZURE_ACR_NAME }}.azurecr.io/${{ github.event.repository.name }}:${{ needs.release.outputs.version }}
+
+          revision=""
+          for attempt in $(seq 1 30); do
+            candidate=$(az containerapp show --name "$APP_NAME" --resource-group "$resource_group" --query properties.latestRevisionName -o tsv)
+            if [ -n "$candidate" ] && [ "$candidate" != "$previous_revision" ]; then
+              revision="$candidate"
+              break
+            fi
+            echo "Waiting for a new revision ($attempt/30)."
+            sleep 5
+          done
+          test -n "$revision" || { echo "No new revision appeared; restoring $previous." >&2; az containerapp update --name "$APP_NAME" --resource-group "$resource_group" --image "$previous"; exit 1; }
+
+          healthy=false
+          for attempt in $(seq 1 30); do
+            echo "Health check attempt $attempt of 30 for revision $revision."
+            state=$(az containerapp revision show --name "$APP_NAME" --resource-group "$resource_group" --revision "$revision" --query properties.runningState -o tsv 2>/dev/null || true)
+            health=$(az containerapp revision show --name "$APP_NAME" --resource-group "$resource_group" --revision "$revision" --query properties.healthState -o tsv 2>/dev/null || true)
+            if [ "$state" = "Running" ] && [ "$health" = "Healthy" ]; then
+              echo "Revision $revision is healthy."
+              healthy=true
+              break
+            fi
+            if [ "$state" = "Failed" ] || [ "$health" = "Unhealthy" ]; then break; fi
+            sleep 10
+          done
+          [ "$healthy" = "true" ] && exit 0
+
+          echo "Revision $revision did not become healthy; restoring $previous." >&2
+          az containerapp update --name "$APP_NAME" --resource-group "$resource_group" --image "$previous"
+          rollback_revision=""
+          for attempt in $(seq 1 30); do
+            candidate=$(az containerapp show --name "$APP_NAME" --resource-group "$resource_group" --query properties.latestRevisionName -o tsv)
+            if [ -n "$candidate" ] && [ "$candidate" != "$revision" ]; then
+              rollback_revision="$candidate"
+              break
+            fi
+            sleep 5
+          done
+          test -n "$rollback_revision" || { echo "Rollback did not create a revision." >&2; exit 1; }
+          rollback_healthy=false
+          for attempt in $(seq 1 30); do
+            state=$(az containerapp revision show --name "$APP_NAME" --resource-group "$resource_group" --revision "$rollback_revision" --query properties.runningState -o tsv 2>/dev/null || true)
+            health=$(az containerapp revision show --name "$APP_NAME" --resource-group "$resource_group" --revision "$rollback_revision" --query properties.healthState -o tsv 2>/dev/null || true)
+            if [ "$state" = "Running" ] && [ "$health" = "Healthy" ]; then rollback_healthy=true; break; fi
+            sleep 10
+          done
+          test "$rollback_healthy" = "true" || { echo "Rollback revision $rollback_revision is not healthy." >&2; exit 1; }
+          echo "Rollback revision $rollback_revision is healthy; deployment remains failed." >&2
+          exit 1
+
+      - name: Complete production deployment
+        if: always() && steps.deployment.outputs.result != ''
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
+        with:
+          script: |
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id: Number(${{ steps.deployment.outputs.result }}),
+              state: '${{ job.status }}' === 'success' ? 'success' : 'failure',
+            });
