@@ -1,0 +1,31 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    container_name: idp-demo-backend
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: "3001"
+      RUST_LOG: "backend=info,tower_http=info"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3001/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: idp-demo-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      # The frontend's Node server reaches the backend over the internal network.
+      BACKEND_URL: "http://backend:3001"
+      NODE_ENV: "production"
+      PORT: "3000"
+    depends_on:
+      backend:
+        condition: service_healthy
