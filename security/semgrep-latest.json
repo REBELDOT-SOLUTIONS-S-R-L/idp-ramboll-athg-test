@@ -7,8 +7,8 @@
   "scan": {
     "status": "completed"
   },
-  "generatedAt": "2026-08-18T08:55:00Z",
-  "commit": "3bfe103acc524d40e3d184f51dcdddc9403fe649",
+  "generatedAt": "2026-08-24T03:35:30Z",
+  "commit": "deba48106491a13f9341cc942f02a9e67bfbd402",
   "repository": "REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test",
   "counts": {
     "ERROR": 2,
@@ -24,7 +24,7 @@
       "path": "backend/Dockerfile",
       "startLine": 4,
       "endLine": 4,
-      "url": "https://github.com/REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test/blob/3bfe103acc524d40e3d184f51dcdddc9403fe649/backend/Dockerfile#L4-L4",
+      "url": "https://github.com/REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test/blob/deba48106491a13f9341cc942f02a9e67bfbd402/backend/Dockerfile#L4-L4",
       "references": [
         "https://stackoverflow.com/a/33511811/4965"
       ]
@@ -37,7 +37,7 @@
       "path": "backend/Dockerfile",
       "startLine": 18,
       "endLine": 18,
-      "url": "https://github.com/REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test/blob/3bfe103acc524d40e3d184f51dcdddc9403fe649/backend/Dockerfile#L18-L18",
+      "url": "https://github.com/REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test/blob/deba48106491a13f9341cc942f02a9e67bfbd402/backend/Dockerfile#L18-L18",
       "references": [
         "https://stackoverflow.com/a/33511811/4965"
       ]
@@ -50,7 +50,7 @@
       "path": "backend/Dockerfile",
       "startLine": 19,
       "endLine": 19,
-      "url": "https://github.com/REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test/blob/3bfe103acc524d40e3d184f51dcdddc9403fe649/backend/Dockerfile#L19-L19",
+      "url": "https://github.com/REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test/blob/deba48106491a13f9341cc942f02a9e67bfbd402/backend/Dockerfile#L19-L19",
       "references": [
         "https://github.com/hadolint/hadolint/wiki/DL3009"
       ]
@@ -63,7 +63,7 @@
       "path": "backend/Dockerfile",
       "startLine": 30,
       "endLine": 31,
-      "url": "https://github.com/REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test/blob/3bfe103acc524d40e3d184f51dcdddc9403fe649/backend/Dockerfile#L30-L31",
+      "url": "https://github.com/REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test/blob/deba48106491a13f9341cc942f02a9e67bfbd402/backend/Dockerfile#L30-L31",
       "references": [
         "https://github.com/hadolint/hadolint/wiki/DL3025",
         "https://docs.docker.com/develop/develop-images/dockerfile_best-practices/#cmd"
@@ -77,7 +77,7 @@
       "path": "backend/Dockerfile",
       "startLine": 33,
       "endLine": 33,
-      "url": "https://github.com/REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test/blob/3bfe103acc524d40e3d184f51dcdddc9403fe649/backend/Dockerfile#L33-L33",
+      "url": "https://github.com/REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test/blob/deba48106491a13f9341cc942f02a9e67bfbd402/backend/Dockerfile#L33-L33",
       "references": [
         "https://owasp.org/Top10/A04_2021-Insecure_Design"
       ]
@@ -90,7 +90,7 @@
       "path": "frontend/Dockerfile",
       "startLine": 4,
       "endLine": 4,
-      "url": "https://github.com/REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test/blob/3bfe103acc524d40e3d184f51dcdddc9403fe649/frontend/Dockerfile#L4-L4",
+      "url": "https://github.com/REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test/blob/deba48106491a13f9341cc942f02a9e67bfbd402/frontend/Dockerfile#L4-L4",
       "references": [
         "https://stackoverflow.com/a/33511811/4965"
       ]
@@ -103,7 +103,7 @@
       "path": "frontend/Dockerfile",
       "startLine": 19,
       "endLine": 19,
-      "url": "https://github.com/REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test/blob/3bfe103acc524d40e3d184f51dcdddc9403fe649/frontend/Dockerfile#L19-L19",
+      "url": "https://github.com/REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test/blob/deba48106491a13f9341cc942f02a9e67bfbd402/frontend/Dockerfile#L19-L19",
       "references": [
         "https://stackoverflow.com/a/33511811/4965"
       ]
@@ -116,7 +116,7 @@
       "path": "frontend/Dockerfile",
       "startLine": 39,
       "endLine": 39,
-      "url": "https://github.com/REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test/blob/3bfe103acc524d40e3d184f51dcdddc9403fe649/frontend/Dockerfile#L39-L39",
+      "url": "https://github.com/REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test/blob/deba48106491a13f9341cc942f02a9e67bfbd402/frontend/Dockerfile#L39-L39",
       "references": [
         "https://owasp.org/Top10/A04_2021-Insecure_Design"
       ]
@@ -129,7 +129,7 @@
       "path": "frontend/src/routes/index.tsx",
       "startLine": 44,
       "endLine": 46,
-      "url": "https://github.com/REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test/blob/3bfe103acc524d40e3d184f51dcdddc9403fe649/frontend/src/routes/index.tsx#L44-L46",
+      "url": "https://github.com/REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test/blob/deba48106491a13f9341cc942f02a9e67bfbd402/frontend/src/routes/index.tsx#L44-L46",
       "references": [
         "https://www.notion.so/hendyirawan/Internationalization-Localization-Policy-318c21674e5f44c48d6f136a6eb2e024",
         "https://mui.com/",
@@ -144,7 +144,7 @@
       "path": "frontend/src/routes/index.tsx",
       "startLine": 47,
       "endLine": 47,
-      "url": "https://github.com/REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test/blob/3bfe103acc524d40e3d184f51dcdddc9403fe649/frontend/src/routes/index.tsx#L47-L47",
+      "url": "https://github.com/REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test/blob/deba48106491a13f9341cc942f02a9e67bfbd402/frontend/src/routes/index.tsx#L47-L47",
       "references": [
         "https://www.notion.so/hendyirawan/Internationalization-Localization-Policy-318c21674e5f44c48d6f136a6eb2e024",
         "https://mui.com/",
@@ -159,7 +159,7 @@
       "path": "frontend/src/routes/index.tsx",
       "startLine": 48,
       "endLine": 51,
-      "url": "https://github.com/REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test/blob/3bfe103acc524d40e3d184f51dcdddc9403fe649/frontend/src/routes/index.tsx#L48-L51",
+      "url": "https://github.com/REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test/blob/deba48106491a13f9341cc942f02a9e67bfbd402/frontend/src/routes/index.tsx#L48-L51",
       "references": [
         "https://www.notion.so/hendyirawan/Internationalization-Localization-Policy-318c21674e5f44c48d6f136a6eb2e024",
         "https://mui.com/",
@@ -174,7 +174,7 @@
       "path": "frontend/src/routes/index.tsx",
       "startLine": 56,
       "endLine": 56,
-      "url": "https://github.com/REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test/blob/3bfe103acc524d40e3d184f51dcdddc9403fe649/frontend/src/routes/index.tsx#L56-L56",
+      "url": "https://github.com/REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test/blob/deba48106491a13f9341cc942f02a9e67bfbd402/frontend/src/routes/index.tsx#L56-L56",
       "references": [
         "https://www.notion.so/hendyirawan/Internationalization-Localization-Policy-318c21674e5f44c48d6f136a6eb2e024",
         "https://mui.com/",
@@ -189,7 +189,7 @@
       "path": "frontend/src/routes/index.tsx",
       "startLine": 60,
       "endLine": 62,
-      "url": "https://github.com/REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test/blob/3bfe103acc524d40e3d184f51dcdddc9403fe649/frontend/src/routes/index.tsx#L60-L62",
+      "url": "https://github.com/REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test/blob/deba48106491a13f9341cc942f02a9e67bfbd402/frontend/src/routes/index.tsx#L60-L62",
       "references": [
         "https://www.notion.so/hendyirawan/Internationalization-Localization-Policy-318c21674e5f44c48d6f136a6eb2e024",
         "https://mui.com/",
@@ -204,7 +204,7 @@
       "path": "frontend/src/routes/index.tsx",
       "startLine": 66,
       "endLine": 66,
-      "url": "https://github.com/REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test/blob/3bfe103acc524d40e3d184f51dcdddc9403fe649/frontend/src/routes/index.tsx#L66-L66",
+      "url": "https://github.com/REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test/blob/deba48106491a13f9341cc942f02a9e67bfbd402/frontend/src/routes/index.tsx#L66-L66",
       "references": [
         "https://www.notion.so/hendyirawan/Internationalization-Localization-Policy-318c21674e5f44c48d6f136a6eb2e024",
         "https://mui.com/",
@@ -219,7 +219,7 @@
       "path": "frontend/src/routes/index.tsx",
       "startLine": 91,
       "endLine": 91,
-      "url": "https://github.com/REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test/blob/3bfe103acc524d40e3d184f51dcdddc9403fe649/frontend/src/routes/index.tsx#L91-L91",
+      "url": "https://github.com/REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test/blob/deba48106491a13f9341cc942f02a9e67bfbd402/frontend/src/routes/index.tsx#L91-L91",
       "references": [
         "https://www.notion.so/hendyirawan/Internationalization-Localization-Policy-318c21674e5f44c48d6f136a6eb2e024",
         "https://mui.com/",
@@ -234,7 +234,7 @@
       "path": "frontend/src/routes/index.tsx",
       "startLine": 123,
       "endLine": 127,
-      "url": "https://github.com/REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test/blob/3bfe103acc524d40e3d184f51dcdddc9403fe649/frontend/src/routes/index.tsx#L123-L127",
+      "url": "https://github.com/REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test/blob/deba48106491a13f9341cc942f02a9e67bfbd402/frontend/src/routes/index.tsx#L123-L127",
       "references": [
         "https://www.notion.so/hendyirawan/Internationalization-Localization-Policy-318c21674e5f44c48d6f136a6eb2e024",
         "https://mui.com/",
@@ -249,7 +249,7 @@
       "path": "frontend/src/routes/index.tsx",
       "startLine": 130,
       "endLine": 134,
-      "url": "https://github.com/REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test/blob/3bfe103acc524d40e3d184f51dcdddc9403fe649/frontend/src/routes/index.tsx#L130-L134",
+      "url": "https://github.com/REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test/blob/deba48106491a13f9341cc942f02a9e67bfbd402/frontend/src/routes/index.tsx#L130-L134",
       "references": [
         "https://www.notion.so/hendyirawan/Internationalization-Localization-Policy-318c21674e5f44c48d6f136a6eb2e024",
         "https://mui.com/",
@@ -264,7 +264,7 @@
       "path": "frontend/src/routes/index.tsx",
       "startLine": 136,
       "endLine": 140,
-      "url": "https://github.com/REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test/blob/3bfe103acc524d40e3d184f51dcdddc9403fe649/frontend/src/routes/index.tsx#L136-L140",
+      "url": "https://github.com/REBELDOT-SOLUTIONS-S-R-L/idp-ramboll-athg-test/blob/deba48106491a13f9341cc942f02a9e67bfbd402/frontend/src/routes/index.tsx#L136-L140",
       "references": [
         "https://www.notion.so/hendyirawan/Internationalization-Localization-Policy-318c21674e5f44c48d6f136a6eb2e024",
         "https://mui.com/",
